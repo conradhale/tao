@@ -600,20 +600,28 @@ impl Window {
   #[inline]
   pub fn raw_window_handle_rwh_04(&self) -> rwh_04::RawWindowHandle {
     if self.is_wayland() {
+      use gdk_wayland::prelude::WaylandSurfaceExtManual;
+      use gdk_wayland::wayland_client::Proxy;
+
       let mut window_handle = rwh_04::WaylandHandle::empty();
-      if let Some(window) = self.window.surface() {
-        window_handle.surface =
-          unsafe { gdk_wayland_sys::gdk_wayland_surface_get_wl_surface(window.as_ptr() as *mut _) };
+      if let Some(surface) = self.window.surface() {
+        let ptr = surface
+          .downcast::<gdk_wayland::WaylandSurface>()
+          .unwrap()
+          .wl_surface()
+          .unwrap()
+          .id()
+          .as_ptr();
+        window_handle.surface = ptr as *mut _;
       }
 
       rwh_04::RawWindowHandle::Wayland(window_handle)
     } else {
       let mut window_handle = rwh_04::XlibHandle::empty();
-      unsafe {
-        if let Some(window) = self.window.surface() {
-          window_handle.window = gdk_x11_sys::gdk_x11_surface_get_xid(window.as_ptr() as *mut _);
-        }
+      if let Some(surface) = self.window.surface() {
+        window_handle.window = surface.downcast::<gdk_x11::X11Surface>().unwrap().xid();
       }
+
       rwh_04::RawWindowHandle::Xlib(window_handle)
     }
   }
@@ -622,61 +630,85 @@ impl Window {
   #[inline]
   pub fn raw_window_handle_rwh_05(&self) -> rwh_05::RawWindowHandle {
     if self.is_wayland() {
+      use gdk_wayland::prelude::WaylandSurfaceExtManual;
+      use gdk_wayland::wayland_client::Proxy;
+
       let mut window_handle = rwh_05::WaylandWindowHandle::empty();
-      if let Some(window) = self.window.surface() {
-        window_handle.surface =
-          unsafe { gdk_wayland_sys::gdk_wayland_surface_get_wl_surface(window.as_ptr() as *mut _) };
+      if let Some(surface) = self.window.surface() {
+        let ptr = surface
+          .downcast::<gdk_wayland::WaylandSurface>()
+          .unwrap()
+          .wl_surface()
+          .unwrap()
+          .id()
+          .as_ptr();
+        window_handle.surface = ptr as *mut _;
       }
 
-      rwh_05::RawWindowHandle::Wayland(window_handle)
+      window_handle.into()
     } else {
       let mut window_handle = rwh_05::XlibWindowHandle::empty();
-      unsafe {
-        if let Some(window) = self.window.surface() {
-          window_handle.window = gdk_x11_sys::gdk_x11_surface_get_xid(window.as_ptr() as *mut _);
-        }
+      if let Some(surface) = self.window.surface() {
+        window_handle.window = surface.downcast::<gdk_x11::X11Surface>().unwrap().xid();
       }
-      rwh_05::RawWindowHandle::Xlib(window_handle)
+      window_handle.into()
     }
   }
 
   #[cfg(feature = "rwh_05")]
   #[inline]
   pub fn raw_display_handle_rwh_05(&self) -> rwh_05::RawDisplayHandle {
+    let display = self.display();
     if self.is_wayland() {
-      let mut display_handle = rwh_05::WaylandDisplayHandle::empty();
-      let display = RootExt::display(&self.window);
-      display_handle.display =
-        unsafe { gdk_wayland_sys::gdk_wayland_display_get_wl_display(display.as_ptr() as *mut _) };
-      rwh_05::RawDisplayHandle::Wayland(display_handle)
-    } else {
-      let mut display_handle = rwh_05::XlibDisplayHandle::empty();
-      unsafe {
-        if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
-          let display = (xlib.XOpenDisplay)(std::ptr::null());
-          display_handle.display = display as _;
-          display_handle.screen = (xlib.XDefaultScreen)(display) as _;
-        }
-      }
+      use gdk_wayland::wayland_client::Proxy;
+      let display = display
+        .downcast::<gdk_wayland::WaylandDisplay>()
+        .unwrap()
+        .wl_display()
+        .unwrap()
+        .id()
+        .as_ptr();
 
-      rwh_05::RawDisplayHandle::Xlib(display_handle)
+      let mut display_handle = rwh_05::WaylandDisplayHandle::empty();
+      display_handle.display = display as *mut _;
+      display_handle.into()
+    } else {
+      let display = display.downcast::<gdk_x11::X11Display>().unwrap();
+
+      let mut display_handle = rwh_05::XlibDisplayHandle::empty();
+      display_handle.display =
+        unsafe { gdk_x11::ffi::gdk_x11_display_get_xdisplay(display.as_ptr() as *mut _) };
+      display_handle.screen = display.screen().screen_number();
+      display_handle.into()
     }
   }
 
   #[cfg(feature = "rwh_06")]
   #[inline]
   pub fn raw_window_handle_rwh_06(&self) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
-    if let Some(window) = self.window.surface() {
+    if let Some(surface) = self.window.surface() {
       if self.is_wayland() {
-        let surface =
-          unsafe { gdk_wayland_sys::gdk_wayland_surface_get_wl_surface(window.as_ptr() as *mut _) };
-        let surface = unsafe { std::ptr::NonNull::new_unchecked(surface) };
-        let window_handle = rwh_06::WaylandWindowHandle::new(surface);
-        Ok(rwh_06::RawWindowHandle::Wayland(window_handle))
+        use gdk_wayland::prelude::WaylandSurfaceExtManual;
+        use gdk_wayland::wayland_client::Proxy;
+
+        Ok(
+          rwh_06::WaylandWindowHandle::new({
+            let ptr = surface
+              .downcast::<gdk_wayland::WaylandSurface>()
+              .unwrap()
+              .wl_surface()
+              .unwrap()
+              .id()
+              .as_ptr();
+            std::ptr::NonNull::new(ptr as *mut _).expect("wl_surface will never be null")
+          })
+          .into(),
+        )
       } else {
-        let xid = unsafe { gdk_x11_sys::gdk_x11_surface_get_xid(window.as_ptr() as *mut _) };
-        let window_handle = rwh_06::XlibWindowHandle::new(xid);
-        Ok(rwh_06::RawWindowHandle::Xlib(window_handle))
+        Ok(
+          rwh_06::XlibWindowHandle::new(surface.downcast::<gdk_x11::X11Surface>().unwrap().xid())
+            .into(),
+        )
       }
     } else {
       Err(rwh_06::HandleError::Unavailable)
@@ -686,25 +718,34 @@ impl Window {
   #[cfg(feature = "rwh_06")]
   #[inline]
   pub fn raw_display_handle_rwh_06(&self) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
+    let display = self.display();
     if self.is_wayland() {
-      let display = RootExt::display(&self.window);
-      let display =
-        unsafe { gdk_wayland_sys::gdk_wayland_display_get_wl_display(display.as_ptr() as *mut _) };
-      let display = unsafe { std::ptr::NonNull::new_unchecked(display) };
-      let display_handle = rwh_06::WaylandDisplayHandle::new(display);
-      Ok(rwh_06::RawDisplayHandle::Wayland(display_handle))
+      use gdk_wayland::wayland_client::Proxy;
+
+      Ok(
+        rwh_06::WaylandDisplayHandle::new({
+          let ptr = display
+            .downcast::<gdk_wayland::WaylandDisplay>()
+            .unwrap()
+            .wl_display()
+            .unwrap()
+            .id()
+            .as_ptr();
+          std::ptr::NonNull::new(ptr as *mut _).expect("wl_display will never be null")
+        })
+        .into(),
+      )
     } else {
-      if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
-        unsafe {
-          let display = (xlib.XOpenDisplay)(std::ptr::null());
-          let screen = (xlib.XDefaultScreen)(display) as _;
-          let display = std::ptr::NonNull::new_unchecked(display as _);
-          let display_handle = rwh_06::XlibDisplayHandle::new(Some(display), screen);
-          Ok(rwh_06::RawDisplayHandle::Xlib(display_handle))
-        }
-      } else {
-        Err(rwh_06::HandleError::Unavailable)
-      }
+      let display = display.downcast::<gdk_x11::X11Display>().unwrap();
+
+      Ok(rwh_06::XlibDisplayHandle::new(
+        Some(
+          std::ptr::NonNull::new(unsafe {
+            gdk_x11::ffi::gdk_x11_display_get_xdisplay(display.as_ptr() as *mut _)
+          }).expect("X11 display should never be null")
+        ),
+        display.screen().screen_number()
+      ).into())
     }
   }
 

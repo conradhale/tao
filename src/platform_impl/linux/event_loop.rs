@@ -83,47 +83,58 @@ impl<T> EventLoopWindowTarget<T> {
 
   #[cfg(feature = "rwh_05")]
   pub fn raw_display_handle_rwh_05(&self) -> rwh_05::RawDisplayHandle {
+    let display = self.display.clone();
     if self.is_wayland() {
-      let mut display_handle = rwh_05::WaylandDisplayHandle::empty();
-      display_handle.display = unsafe {
-        gdk_wayland_sys::gdk_wayland_display_get_wl_display(self.display.as_ptr() as *mut _)
-      };
-      rwh_05::RawDisplayHandle::Wayland(display_handle)
-    } else {
-      let mut display_handle = rwh_05::XlibDisplayHandle::empty();
-      unsafe {
-        if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
-          let display = (xlib.XOpenDisplay)(std::ptr::null());
-          display_handle.display = display as _;
-          display_handle.screen = (xlib.XDefaultScreen)(display) as _;
-        }
-      }
+      use gdk_wayland::wayland_client::Proxy;
+      let display = display
+        .downcast::<gdk_wayland::WaylandDisplay>()
+        .unwrap()
+        .wl_display()
+        .unwrap()
+        .id()
+        .as_ptr();
 
-      rwh_05::RawDisplayHandle::Xlib(display_handle)
+      let mut display_handle = rwh_05::WaylandDisplayHandle::empty();
+      display_handle.display = display as *mut _;
+      display_handle.into()
+    } else {
+      let display = display.downcast::<gdk_x11::X11Display>().unwrap();
+
+      let mut display_handle = rwh_05::XlibDisplayHandle::empty();
+      display_handle.display =
+        unsafe { gdk_x11::ffi::gdk_x11_display_get_xdisplay(display.as_ptr() as *mut _) };
+      display_handle.screen = display.screen().screen_number();
+      display_handle.into()
     }
   }
 
   #[cfg(feature = "rwh_06")]
+  #[inline]
   pub fn raw_display_handle_rwh_06(&self) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
+    let display = self.display.clone();
     if self.is_wayland() {
-      let display = unsafe {
-        gdk_wayland_sys::gdk_wayland_display_get_wl_display(self.display.as_ptr() as *mut _)
-      };
-      let display = unsafe { std::ptr::NonNull::new_unchecked(display) };
-      let display_handle = rwh_06::WaylandDisplayHandle::new(display);
-      Ok(rwh_06::RawDisplayHandle::Wayland(display_handle))
+      use gdk_wayland::wayland_client::Proxy;
+
+      Ok(
+        rwh_06::WaylandDisplayHandle::new({
+          let ptr = display
+            .downcast::<gdk_wayland::WaylandDisplay>()
+            .unwrap()
+            .wl_display()
+            .unwrap()
+            .id()
+            .as_ptr();
+          std::ptr::NonNull::new(ptr as *mut _).expect("wl_display will never be null")
+        })
+        .into(),
+      )
     } else {
-      unsafe {
-        if let Ok(xlib) = x11_dl::xlib::Xlib::open() {
-          let display = (xlib.XOpenDisplay)(std::ptr::null());
-          let screen = (xlib.XDefaultScreen)(display) as _;
-          let display = std::ptr::NonNull::new_unchecked(display as _);
-          let display_handle = rwh_06::XlibDisplayHandle::new(Some(display), screen);
-          Ok(rwh_06::RawDisplayHandle::Xlib(display_handle))
-        } else {
-          Err(rwh_06::HandleError::Unavailable)
-        }
-      }
+      let display = display.downcast::<gdk_x11::X11Display>().unwrap();
+      let xdisplay = std::ptr::NonNull::new(unsafe {
+        gdk_x11::ffi::gdk_x11_display_get_xdisplay(display.as_ptr() as *mut _)
+      });
+      let xscreen = display.screen().screen_number();
+      Ok(rwh_06::XlibDisplayHandle::new(xdisplay, xscreen).into())
     }
   }
 
